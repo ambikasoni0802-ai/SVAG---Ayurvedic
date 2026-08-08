@@ -146,6 +146,29 @@ st.markdown(
         height: 42px;
         padding: 0;
     }
+
+    /* ChatGPT-style chat alignment: user messages on right, SVAG on left */
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAvatarUser"]) {
+        flex-direction: row-reverse;
+        text-align: right;
+        margin-left: auto;
+    }
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAvatarUser"]) div[data-testid="stChatMessageContent"] {
+        background-color: #e9f5e9;
+        border-radius: 16px;
+        padding: 10px 14px;
+        display: inline-block;
+        text-align: right;
+        max-width: 80%;
+        margin-left: auto;
+    }
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAvatarAssistant"]) div[data-testid="stChatMessageContent"] {
+        background-color: #f4f4f5;
+        border-radius: 16px;
+        padding: 10px 14px;
+        display: inline-block;
+        max-width: 80%;
+    }
     </style>
     """,
     unsafe_allow_html=True,
