@@ -47,7 +47,7 @@ def text_to_speech(text, language):
     try:
         async def _generate():
             audio_bytes = b""
-            communicate = edge_tts.Communicate(text, voice, rate="-5%", pitch="-15Hz")
+            communicate = edge_tts.Communicate(text, voice, rate="+10%", pitch="-12Hz")
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_bytes += chunk["data"]
