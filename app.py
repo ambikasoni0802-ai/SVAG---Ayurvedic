@@ -266,6 +266,22 @@ def load_svag():
 vectordb = load_svag()
 client = Groq(api_key=GROQ_API_KEY)
 
+APPOINTMENT_LINK = "https://swamivivekanandayurvedclinic.netlify.app/"
+APPOINTMENT_KEYWORDS = [
+    "appointment", "book", "booking", "consult", "consultation",
+    "मुलाकात", "अपॉइंटमेंट", "बुक", "मिलना", "डॉक्टर से मिलना",
+    "भेट", "अपॉईंटमेंट",
+]
+
+
+def is_appointment_request(text):
+    text_lower = text.lower()
+    return any(keyword.lower() in text_lower for keyword in APPOINTMENT_KEYWORDS)
+
+
+def show_appointment_button():
+    st.link_button("📅 Appointment Book Karein", APPOINTMENT_LINK)
+
 
 def svag_ask(question, language):
     results = vectordb.similarity_search(question, k=4)
@@ -285,6 +301,9 @@ def svag_ask(question, language):
         f"taraf se prayas (consistency/discipline) karna padta hai, tabhi poori tarah theek hota hai. "
         f"Adhik jaankari ke liye is link par jayein: https://swamivivekanandayurvedclinic.netlify.app/ "
         f"(mention this link clearly and tell them to type/visit this link for more information). "
+        f"If the user says they want to book an appointment, mil na hai, consultation chahiye, or "
+        f"anything similar, tell them (in {language}) that you are showing them an appointment "
+        f"booking button/link below — mention that a button has appeared for them to tap. "
         f"Use the Ayurvedic context below to answer the question. "
         f"If the answer is not in the context, say you don't know (in {language}).\n\n"
         f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer (in {language}):"
@@ -405,6 +424,8 @@ if st.session_state.show_voice_msg:
                             vm_audio = text_to_speech(vm_answer, selected_language)
                             if vm_audio:
                                 st.audio(vm_audio, format="audio/mp3")
+                            if is_appointment_request(edited_text):
+                                show_appointment_button()
                     st.session_state.messages.append({"role": "assistant", "content": vm_answer})
                     st.session_state.show_voice_msg = False
                     del st.session_state.vm_transcribed
@@ -430,6 +451,8 @@ if st.session_state.show_voice_assistant:
                         voice_audio = text_to_speech(voice_answer, selected_language)
                         if voice_audio:
                             st.audio(voice_audio, format="audio/mp3", autoplay=True)
+                        if is_appointment_request(spoken_text):
+                            show_appointment_button()
 
                 st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
@@ -447,4 +470,6 @@ if user_question:
             audio = text_to_speech(answer, selected_language)
             if audio:
                 st.audio(audio, format="audio/mp3")
+            if is_appointment_request(user_question):
+                show_appointment_button()
     st.session_state.messages.append({"role": "assistant", "content": answer})
