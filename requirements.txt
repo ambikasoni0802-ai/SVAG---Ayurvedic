@@ -6,4 +6,4 @@ langchain-core
 chromadb
 sentence-transformers
 groq
-gtts
+edge-tts
