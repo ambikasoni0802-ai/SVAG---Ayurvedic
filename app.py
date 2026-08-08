@@ -73,32 +73,6 @@ def speech_to_text(audio_bytes):
 st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="logo.png")
 
 SVAG_AVATAR = "logo.png"
-DOCTOR_VIDEO = "doctor_avatar.mp4"
-
-
-def show_speaking_screen(answer_text, audio_buffer):
-    st.markdown(
-        """
-        <style>
-        .svag-speaking-text {
-            color: #4CAF50;
-            font-size: 18px;
-            margin-top: 10px;
-            font-weight: 600;
-            text-align: center;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    vcol1, vcol2, vcol3 = st.columns([1, 2, 1])
-    with vcol2:
-        st.video(DOCTOR_VIDEO, loop=True, autoplay=True, muted=True)
-    st.markdown('<p class="svag-speaking-text">🔊 SVAG bol raha hai...</p>', unsafe_allow_html=True)
-    if audio_buffer:
-        st.audio(audio_buffer, format="audio/mp3", autoplay=True)
-    with st.expander("Jawab padhein"):
-        st.markdown(answer_text)
 
 
 
@@ -136,17 +110,78 @@ LANGUAGES = {
     "Nederlands (Dutch)": "Dutch",
 }
 
-with st.sidebar:
-    st.header("⚙️ Settings")
-    selected_label = st.selectbox("Jawab ki bhasha / Answer language", list(LANGUAGES.keys()), index=0)
-    selected_language = LANGUAGES[selected_label]
+if "show_settings" not in st.session_state:
+    st.session_state.show_settings = False
 
-col1, col2 = st.columns([1, 5])
-with col1:
-    st.image("logo.png", width=80)
-with col2:
-    st.title("SVAG — Ayurvedic AI Assistant")
-st.caption("Ayurveda se juda koi bhi sawaal poochein — kisi bhi bhasha mein")
+st.markdown(
+    """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .block-container {padding-top: 1rem; padding-bottom: 1rem;}
+
+    .svag-topbar-pill {
+        background: #f4f4f5;
+        border-radius: 999px;
+        padding: 8px 18px;
+        font-weight: 600;
+        color: #444;
+        font-size: 14px;
+        text-align: center;
+    }
+    .svag-empty-logo {
+        display: flex;
+        justify-content: center;
+        margin-top: 6vh;
+        margin-bottom: 6vh;
+    }
+    .svag-empty-logo img {
+        width: 55%;
+        max-width: 280px;
+    }
+    div[data-testid="stButton"] button {
+        border-radius: 50%;
+        width: 42px;
+        height: 42px;
+        padding: 0;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+top_c1, top_c2, top_c3 = st.columns([1, 3, 1])
+with top_c1:
+    if st.button("☰", key="hamburger_btn"):
+        st.session_state.show_settings = not st.session_state.show_settings
+with top_c2:
+    st.markdown('<div class="svag-topbar-pill">🌿 SVAG</div>', unsafe_allow_html=True)
+
+if st.session_state.show_settings:
+    with st.container(border=True):
+        st.markdown("**⚙️ Settings**")
+        selected_label = st.selectbox("Jawab ki bhasha / Answer language", list(LANGUAGES.keys()), index=0)
+        selected_language = LANGUAGES[selected_label]
+else:
+    if "selected_language_persist" not in st.session_state:
+        st.session_state.selected_language_persist = "English"
+    selected_language = st.session_state.selected_language_persist
+
+if st.session_state.show_settings:
+    st.session_state.selected_language_persist = selected_language
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if len(st.session_state.messages) == 0:
+    import base64
+    with open("logo.png", "rb") as f:
+        logo_b64 = base64.b64encode(f.read()).decode()
+    st.markdown(
+        f'<div class="svag-empty-logo"><img src="data:image/png;base64,{logo_b64}"></div>',
+        unsafe_allow_html=True,
+    )
 
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
@@ -275,48 +310,105 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
-st.divider()
-st.subheader("📷 Jadi-buti/medicine ki photo bhejo")
-uploaded_image = st.file_uploader("Photo upload karo (jpg/png)", type=["jpg", "jpeg", "png"])
-image_note = st.text_input("Photo ke baare me kuch batana ho to likho (optional)")
+if "show_upload" not in st.session_state:
+    st.session_state.show_upload = False
+if "show_voice_msg" not in st.session_state:
+    st.session_state.show_voice_msg = False
+if "show_voice_assistant" not in st.session_state:
+    st.session_state.show_voice_assistant = False
 
-if uploaded_image is not None:
-    st.image(uploaded_image, width=250)
-    if st.button("Is image ke baare me batao"):
-        image_bytes = uploaded_image.getvalue()
-        st.session_state.messages.append({"role": "user", "content": "[Image bheji gayi]" + (f" — {image_note}" if image_note else "")})
-        with st.chat_message("user"):
-            st.image(uploaded_image, width=200)
-            if image_note:
-                st.markdown(image_note)
-        with st.chat_message("assistant", avatar=SVAG_AVATAR):
-            with st.spinner("SVAG image dekh raha hai..."):
-                image_answer = svag_ask_image(image_bytes, selected_language, image_note)
-                st.markdown(image_answer)
-                image_audio = text_to_speech(image_answer, selected_language)
-                if image_audio:
-                    st.audio(image_audio, format="audio/mp3")
-        st.session_state.messages.append({"role": "assistant", "content": image_answer})
+icon_c1, icon_c2, icon_c3, icon_c4 = st.columns([1, 1, 1, 3])
+with icon_c1:
+    if st.button("➕", key="plus_btn", help="Photo/File bhejo"):
+        st.session_state.show_upload = not st.session_state.show_upload
+        st.session_state.show_voice_msg = False
+        st.session_state.show_voice_assistant = False
+with icon_c2:
+    if st.button("🎤", key="mic_btn", help="Voice message (bol ke likho)"):
+        st.session_state.show_voice_msg = not st.session_state.show_voice_msg
+        st.session_state.show_upload = False
+        st.session_state.show_voice_assistant = False
+with icon_c3:
+    if st.button("🔵", key="voice_assistant_btn", help="Voice assistant (bol ke seedha jawab)"):
+        st.session_state.show_voice_assistant = not st.session_state.show_voice_assistant
+        st.session_state.show_upload = False
+        st.session_state.show_voice_msg = False
 
-st.divider()
-st.subheader("🎤 Bol ke sawaal poocho")
-voice_input = st.audio_input("Yahan tap karke bolo")
+# --- Panel: Photo/File upload ---
+if st.session_state.show_upload:
+    with st.container(border=True):
+        st.markdown("**📷 Jadi-buti/medicine ki photo bhejo**")
+        uploaded_image = st.file_uploader("Photo upload karo (jpg/png)", type=["jpg", "jpeg", "png"])
+        image_note = st.text_input("Photo ke baare me kuch batana ho to likho (optional)")
 
-if voice_input is not None:
-    if st.button("Ye sawaal SVAG ko bhejo"):
-        with st.spinner("Awaaz samjhi ja rahi hai..."):
-            spoken_text = speech_to_text(voice_input.getvalue())
+        if uploaded_image is not None:
+            st.image(uploaded_image, width=250)
+            if st.button("Is image ke baare me batao"):
+                image_bytes = uploaded_image.getvalue()
+                st.session_state.messages.append({"role": "user", "content": "[Image bheji gayi]" + (f" — {image_note}" if image_note else "")})
+                with st.chat_message("user"):
+                    st.image(uploaded_image, width=200)
+                    if image_note:
+                        st.markdown(image_note)
+                with st.chat_message("assistant", avatar=SVAG_AVATAR):
+                    with st.spinner("SVAG image dekh raha hai..."):
+                        image_answer = svag_ask_image(image_bytes, selected_language, image_note)
+                        st.markdown(image_answer)
+                        image_audio = text_to_speech(image_answer, selected_language)
+                        if image_audio:
+                            st.audio(image_audio, format="audio/mp3")
+                st.session_state.messages.append({"role": "assistant", "content": image_answer})
+                st.session_state.show_upload = False
 
-        st.session_state.messages.append({"role": "user", "content": spoken_text})
+# --- Panel: Voice message (bol ke text banao, edit karke bhejo) ---
+if st.session_state.show_voice_msg:
+    with st.container(border=True):
+        st.markdown("**🎤 Voice message**")
+        vm_input = st.audio_input("Yahan tap karke bolo", key="vm_audio")
+        if vm_input is not None:
+            if st.button("Text me convert karo"):
+                with st.spinner("Awaaz samjhi ja rahi hai..."):
+                    st.session_state.vm_transcribed = speech_to_text(vm_input.getvalue())
+            if "vm_transcribed" in st.session_state:
+                edited_text = st.text_area("Check/edit karo, phir bhejo:", value=st.session_state.vm_transcribed)
+                if st.button("Bhejo"):
+                    st.session_state.messages.append({"role": "user", "content": edited_text})
+                    with st.chat_message("user"):
+                        st.markdown(edited_text)
+                    with st.chat_message("assistant", avatar=SVAG_AVATAR):
+                        with st.spinner("SVAG soch raha hai..."):
+                            vm_answer = svag_ask(edited_text, selected_language)
+                            st.markdown(vm_answer)
+                            vm_audio = text_to_speech(vm_answer, selected_language)
+                            if vm_audio:
+                                st.audio(vm_audio, format="audio/mp3")
+                    st.session_state.messages.append({"role": "assistant", "content": vm_answer})
+                    st.session_state.show_voice_msg = False
+                    del st.session_state.vm_transcribed
 
-        with st.spinner("SVAG soch raha hai..."):
-            voice_answer = svag_ask(spoken_text, selected_language)
-            voice_audio = text_to_speech(voice_answer, selected_language)
+# --- Panel: Voice assistant (bol ke seedha jawab, audio ke saath) ---
+if st.session_state.show_voice_assistant:
+    with st.container(border=True):
+        st.markdown("**🔵 Voice assistant — bol ke seedha sawaal poocho**")
+        voice_input = st.audio_input("Yahan tap karke bolo", key="va_audio")
+        if voice_input is not None:
+            if st.button("Ye sawaal SVAG ko bhejo"):
+                with st.spinner("Awaaz samjhi ja rahi hai..."):
+                    spoken_text = speech_to_text(voice_input.getvalue())
 
-        show_speaking_screen(voice_answer, voice_audio)
-        st.markdown("**Sawaal:** " + spoken_text)
+                st.session_state.messages.append({"role": "user", "content": spoken_text})
+                with st.chat_message("user"):
+                    st.markdown(spoken_text)
 
-        st.session_state.messages.append({"role": "assistant", "content": voice_answer})
+                with st.chat_message("assistant", avatar=SVAG_AVATAR):
+                    with st.spinner("SVAG soch raha hai..."):
+                        voice_answer = svag_ask(spoken_text, selected_language)
+                        st.markdown(voice_answer)
+                        voice_audio = text_to_speech(voice_answer, selected_language)
+                        if voice_audio:
+                            st.audio(voice_audio, format="audio/mp3", autoplay=True)
+
+                st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
 user_question = st.chat_input("Apna Ayurvedic sawaal likho...")
 
