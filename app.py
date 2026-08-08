@@ -1,10 +1,41 @@
 import streamlit as st
-import json, os, subprocess
+import json, os, subprocess, io
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from groq import Groq
+from gtts import gTTS
+
+LANG_TO_TTS_CODE = {
+    "English": "en", "Hindi": "hi", "Marathi": "mr", "Tamil": "ta", "Telugu": "te",
+    "Kannada": "kn", "Malayalam": "ml", "Punjabi": "pa", "Bengali": "bn",
+    "Gujarati": "gu", "Odia": "or", "Urdu": "ur", "Nepali": "ne", "Sinhala": "si",
+    "Spanish": "es", "French": "fr", "German": "de", "Portuguese": "pt",
+    "Italian": "it", "Russian": "ru", "Chinese": "zh-CN", "Japanese": "ja",
+    "Korean": "ko", "Arabic": "ar", "Indonesian": "id", "Turkish": "tr",
+    "Vietnamese": "vi", "Thai": "th", "Swahili": "sw", "Dutch": "nl",
+}
+
+
+def text_to_speech(text, language):
+    tts_code = LANG_TO_TTS_CODE.get(language, "en")
+    try:
+        tts = gTTS(text=text, lang=tts_code)
+        audio_buffer = io.BytesIO()
+        tts.write_to_fp(audio_buffer)
+        audio_buffer.seek(0)
+        return audio_buffer
+    except Exception:
+        return None
+
+
+def speech_to_text(audio_bytes):
+    transcription = client.audio.transcriptions.create(
+        file=("question.wav", audio_bytes),
+        model="whisper-large-v3",
+    )
+    return transcription.text
 
 st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="🌿")
 
@@ -127,12 +158,84 @@ def svag_ask(question, language):
     return response.choices[0].message.content
 
 
+def svag_ask_image(image_bytes, language, user_note=""):
+    import base64
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+    text_instruction = (
+        f"You are SVAG, an Ayurvedic AI assistant. Look at this image — it may be an Ayurvedic "
+        f"herb, plant, root, powder, or medicine. Identify it if possible, and explain in "
+        f"{language} language: its name (also give the Sanskrit/Ayurvedic name if known), its "
+        f"Ayurvedic properties (rasa, guna, virya if relevant), common uses/benefits, and any "
+        f"precautions. If you cannot confidently identify it, say so clearly in {language}. "
+        f"Answer only in {language}."
+    )
+    if user_note:
+        text_instruction += f" Additional note from user: {user_note}"
+
+    response = client.chat.completions.create(
+        model="llama-3.2-90b-vision-preview",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": text_instruction},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+                ],
+            }
+        ],
+    )
+    return response.choices[0].message.content
+
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+
+st.divider()
+st.subheader("📷 Jadi-buti/medicine ki photo bhejo")
+uploaded_image = st.file_uploader("Photo upload karo (jpg/png)", type=["jpg", "jpeg", "png"])
+image_note = st.text_input("Photo ke baare me kuch batana ho to likho (optional)")
+
+if uploaded_image is not None:
+    st.image(uploaded_image, width=250)
+    if st.button("Is image ke baare me batao"):
+        image_bytes = uploaded_image.getvalue()
+        st.session_state.messages.append({"role": "user", "content": "[Image bheji gayi]" + (f" — {image_note}" if image_note else "")})
+        with st.chat_message("user"):
+            st.image(uploaded_image, width=200)
+            if image_note:
+                st.markdown(image_note)
+        with st.chat_message("assistant"):
+            with st.spinner("SVAG image dekh raha hai..."):
+                image_answer = svag_ask_image(image_bytes, selected_language, image_note)
+                st.markdown(image_answer)
+                image_audio = text_to_speech(image_answer, selected_language)
+                if image_audio:
+                    st.audio(image_audio, format="audio/mp3")
+        st.session_state.messages.append({"role": "assistant", "content": image_answer})
+
+st.divider()
+st.subheader("🎤 Bol ke sawaal poocho")
+voice_input = st.audio_input("Yahan tap karke bolo")
+
+if voice_input is not None:
+    if st.button("Ye sawaal SVAG ko bhejo"):
+        with st.spinner("Awaaz samjhi ja rahi hai..."):
+            spoken_text = speech_to_text(voice_input.getvalue())
+        st.session_state.messages.append({"role": "user", "content": spoken_text})
+        with st.chat_message("user"):
+            st.markdown(spoken_text)
+        with st.chat_message("assistant"):
+            with st.spinner("SVAG soch raha hai..."):
+                voice_answer = svag_ask(spoken_text, selected_language)
+                st.markdown(voice_answer)
+                voice_audio = text_to_speech(voice_answer, selected_language)
+                if voice_audio:
+                    st.audio(voice_audio, format="audio/mp3")
+        st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
 user_question = st.chat_input("Apna Ayurvedic sawaal likho...")
 
@@ -145,4 +248,8 @@ if user_question:
         with st.spinner("SVAG soch raha hai..."):
             answer = svag_ask(user_question, selected_language)
             st.markdown(answer)
+            audio = text_to_speech(answer, selected_language)
+            if audio:
+                st.audio(audio, format="audio/mp3")
     st.session_state.messages.append({"role": "assistant", "content": answer})
+        
