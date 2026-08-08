@@ -1,5 +1,5 @@
 import streamlit as st
-import json, os
+import json, os, subprocess
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -13,8 +13,25 @@ st.caption("Ayurveda se juda koi bhi sawaal poochein")
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 
+def ensure_data():
+    if not os.path.exists("Datasets/Ayurveda"):
+        subprocess.run(["git", "clone", "https://github.com/gita/Datasets.git"], check=False)
+        subprocess.run(
+            ["rm", "-rf", "Datasets/chanakya", "Datasets/srimad-bhagavatam",
+             "Datasets/Vectorise_Script", "Datasets/README.md"],
+            check=False,
+        )
+    if not os.path.exists("herb-database"):
+        subprocess.run(
+            ["git", "clone", "https://github.com/sciencewithsaucee-sudo/herb-database.git"],
+            check=False,
+        )
+
+
 @st.cache_resource(show_spinner="SVAG ka brain taiyar ho raha hai... (pehli baar 3-5 min lagenge)")
 def load_svag():
+    ensure_data()
+
     def read_json_safe(path):
         try:
             return json.load(open(path, "r", encoding="utf-8"))
@@ -36,6 +53,10 @@ def load_svag():
     herb_data = read_json_safe("herb-database/herb.json")
     if isinstance(herb_data, list):
         all_texts += [json.dumps(item) for item in herb_data if isinstance(item, dict)]
+
+    if not all_texts:
+        st.error("Data nahi mila — GitHub se Ayurvedic data fetch nahi ho paya. Repo/network check karein.")
+        st.stop()
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     docs = [Document(page_content=t) for t in all_texts]
