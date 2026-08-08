@@ -73,10 +73,11 @@ def speech_to_text(audio_bytes):
 st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="logo.png")
 
 SVAG_AVATAR = "logo.png"
-DOCTOR_AVATAR = "doctor_avatar.png"
+DOCTOR_VIDEO = "doctor_avatar.mp4"
 
 
 def show_speaking_screen(answer_text, audio_buffer):
+    import base64
     st.markdown(
         """
         <style>
@@ -86,9 +87,10 @@ def show_speaking_screen(answer_text, audio_buffer):
             padding: 30px 20px;
             text-align: center;
         }
-        .svag-call-screen img {
-            border-radius: 50%;
-            border: 3px solid #4CAF50;
+        .svag-call-screen video {
+            border-radius: 20px;
+            width: 260px;
+            max-width: 90%;
         }
         .svag-speaking-text {
             color: #4CAF50;
@@ -100,16 +102,23 @@ def show_speaking_screen(answer_text, audio_buffer):
         """,
         unsafe_allow_html=True,
     )
-    st.markdown('<div class="svag-call-screen">', unsafe_allow_html=True)
-    col_a, col_b, col_c = st.columns([1, 2, 1])
-    with col_b:
-        st.image(DOCTOR_AVATAR, width=220)
-    st.markdown('<p class="svag-speaking-text">🔊 SVAG bol raha hai...</p>', unsafe_allow_html=True)
+    with open(DOCTOR_VIDEO, "rb") as f:
+        video_b64 = base64.b64encode(f.read()).decode()
+    st.markdown(
+        f"""
+        <div class="svag-call-screen">
+            <video autoplay loop muted playsinline>
+                <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+            </video>
+            <p class="svag-speaking-text">🔊 SVAG bol raha hai...</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     if audio_buffer:
         st.audio(audio_buffer, format="audio/mp3", autoplay=True)
     with st.expander("Jawab padhein"):
         st.markdown(answer_text)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 
@@ -324,58 +333,8 @@ if voice_input is not None:
             voice_answer = svag_ask(spoken_text, selected_language)
             voice_audio = text_to_speech(voice_answer, selected_language)
 
-        # --- Doctor avatar "speaking" screen ---
-        avatar_area = st.container()
-        with avatar_area:
-            st.markdown(
-                """
-                <div style="
-                    background:#0e1117;
-                    padding:40px 20px;
-                    border-radius:20px;
-                    text-align:center;
-                ">
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            dcol1, dcol2, dcol3 = st.columns([1, 2, 1])
-            with dcol2:
-                st.markdown(
-                    """
-                    <style>
-                    @keyframes svagPulse {
-                        0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.6); }
-                        70% { box-shadow: 0 0 0 25px rgba(46, 204, 113, 0); }
-                        100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
-                    }
-                    .svag-avatar-img {
-                        border-radius: 50%;
-                        animation: svagPulse 1.5s infinite;
-                        width: 220px;
-                        height: 220px;
-                        object-fit: cover;
-                    }
-                    </style>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                import base64
-                with open("doctor_avatar.png", "rb") as f:
-                    doc_b64 = base64.b64encode(f.read()).decode()
-                st.markdown(
-                    f'<div style="text-align:center;"><img class="svag-avatar-img" src="data:image/png;base64,{doc_b64}"></div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    "<p style='text-align:center; color:#2ecc71; font-weight:bold; margin-top:10px;'>🔊 SVAG bol raha hai...</p>",
-                    unsafe_allow_html=True,
-                )
-                if voice_audio:
-                    st.audio(voice_audio, format="audio/mp3", autoplay=True)
-
+        show_speaking_screen(voice_answer, voice_audio)
         st.markdown("**Sawaal:** " + spoken_text)
-        st.markdown("**Jawab:** " + voice_answer)
 
         st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
