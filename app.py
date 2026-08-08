@@ -1,29 +1,62 @@
 import streamlit as st
-import json, os, subprocess, io
+import json, os, subprocess, io, asyncio
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from groq import Groq
-from gtts import gTTS
+import edge_tts
 
-LANG_TO_TTS_CODE = {
-    "English": "en", "Hindi": "hi", "Marathi": "mr", "Tamil": "ta", "Telugu": "te",
-    "Kannada": "kn", "Malayalam": "ml", "Punjabi": "pa", "Bengali": "bn",
-    "Gujarati": "gu", "Odia": "or", "Urdu": "ur", "Nepali": "ne", "Sinhala": "si",
-    "Spanish": "es", "French": "fr", "German": "de", "Portuguese": "pt",
-    "Italian": "it", "Russian": "ru", "Chinese": "zh-CN", "Japanese": "ja",
-    "Korean": "ko", "Arabic": "ar", "Indonesian": "id", "Turkish": "tr",
-    "Vietnamese": "vi", "Thai": "th", "Swahili": "sw", "Dutch": "nl",
+# Male / deep voice for each language (Microsoft Edge neural voices)
+LANG_TO_MALE_VOICE = {
+    "English": "en-US-GuyNeural",
+    "Hindi": "hi-IN-MadhurNeural",
+    "Marathi": "mr-IN-ManoharNeural",
+    "Tamil": "ta-IN-ValluvarNeural",
+    "Telugu": "te-IN-MohanNeural",
+    "Kannada": "kn-IN-GaganNeural",
+    "Malayalam": "ml-IN-MidhunNeural",
+    "Punjabi": "pa-IN-OjasNeural",
+    "Bengali": "bn-IN-BashkarNeural",
+    "Gujarati": "gu-IN-NiranjanNeural",
+    "Odia": "or-IN-SukantNeural",
+    "Urdu": "ur-IN-SalmanNeural",
+    "Nepali": "ne-NP-SagarNeural",
+    "Sinhala": "si-LK-SameeraNeural",
+    "Spanish": "es-ES-AlvaroNeural",
+    "French": "fr-FR-HenriNeural",
+    "German": "de-DE-ConradNeural",
+    "Portuguese": "pt-BR-AntonioNeural",
+    "Italian": "it-IT-DiegoNeural",
+    "Russian": "ru-RU-DmitryNeural",
+    "Chinese": "zh-CN-YunxiNeural",
+    "Japanese": "ja-JP-KeitaNeural",
+    "Korean": "ko-KR-InJoonNeural",
+    "Arabic": "ar-SA-HamedNeural",
+    "Indonesian": "id-ID-ArdiNeural",
+    "Turkish": "tr-TR-AhmetNeural",
+    "Vietnamese": "vi-VN-NamMinhNeural",
+    "Thai": "th-TH-NiwatNeural",
+    "Swahili": "sw-KE-RafikiNeural",
+    "Dutch": "nl-NL-MaartenNeural",
 }
 
 
 def text_to_speech(text, language):
-    tts_code = LANG_TO_TTS_CODE.get(language, "en")
+    voice = LANG_TO_MALE_VOICE.get(language, "en-US-GuyNeural")
     try:
-        tts = gTTS(text=text, lang=tts_code)
-        audio_buffer = io.BytesIO()
-        tts.write_to_fp(audio_buffer)
+        async def _generate():
+            audio_bytes = b""
+            communicate = edge_tts.Communicate(text, voice, rate="-5%", pitch="-15Hz")
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_bytes += chunk["data"]
+            return audio_bytes
+
+        audio_bytes = asyncio.run(_generate())
+        if not audio_bytes:
+            return None
+        audio_buffer = io.BytesIO(audio_bytes)
         audio_buffer.seek(0)
         return audio_buffer
     except Exception:
@@ -40,6 +73,46 @@ def speech_to_text(audio_bytes):
 st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="logo.png")
 
 SVAG_AVATAR = "logo.png"
+DOCTOR_AVATAR = "doctor_avatar.png"
+
+
+def show_speaking_screen(answer_text, audio_buffer):
+    st.markdown(
+        """
+        <style>
+        .svag-call-screen {
+            background-color: #10151c;
+            border-radius: 20px;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .svag-call-screen img {
+            border-radius: 50%;
+            border: 3px solid #4CAF50;
+        }
+        .svag-speaking-text {
+            color: #4CAF50;
+            font-size: 18px;
+            margin-top: 15px;
+            font-weight: 600;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="svag-call-screen">', unsafe_allow_html=True)
+    col_a, col_b, col_c = st.columns([1, 2, 1])
+    with col_b:
+        st.image(DOCTOR_AVATAR, width=220)
+    st.markdown('<p class="svag-speaking-text">🔊 SVAG bol raha hai...</p>', unsafe_allow_html=True)
+    if audio_buffer:
+        st.audio(audio_buffer, format="audio/mp3", autoplay=True)
+    with st.expander("Jawab padhein"):
+        st.markdown(answer_text)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+
 
 LANGUAGES = {
     "English": "English",
@@ -244,16 +317,66 @@ if voice_input is not None:
     if st.button("Ye sawaal SVAG ko bhejo"):
         with st.spinner("Awaaz samjhi ja rahi hai..."):
             spoken_text = speech_to_text(voice_input.getvalue())
+
         st.session_state.messages.append({"role": "user", "content": spoken_text})
-        with st.chat_message("user"):
-            st.markdown(spoken_text)
-        with st.chat_message("assistant", avatar=SVAG_AVATAR):
-            with st.spinner("SVAG soch raha hai..."):
-                voice_answer = svag_ask(spoken_text, selected_language)
-                st.markdown(voice_answer)
-                voice_audio = text_to_speech(voice_answer, selected_language)
+
+        with st.spinner("SVAG soch raha hai..."):
+            voice_answer = svag_ask(spoken_text, selected_language)
+            voice_audio = text_to_speech(voice_answer, selected_language)
+
+        # --- Doctor avatar "speaking" screen ---
+        avatar_area = st.container()
+        with avatar_area:
+            st.markdown(
+                """
+                <div style="
+                    background:#0e1117;
+                    padding:40px 20px;
+                    border-radius:20px;
+                    text-align:center;
+                ">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            dcol1, dcol2, dcol3 = st.columns([1, 2, 1])
+            with dcol2:
+                st.markdown(
+                    """
+                    <style>
+                    @keyframes svagPulse {
+                        0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.6); }
+                        70% { box-shadow: 0 0 0 25px rgba(46, 204, 113, 0); }
+                        100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+                    }
+                    .svag-avatar-img {
+                        border-radius: 50%;
+                        animation: svagPulse 1.5s infinite;
+                        width: 220px;
+                        height: 220px;
+                        object-fit: cover;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                import base64
+                with open("doctor_avatar.png", "rb") as f:
+                    doc_b64 = base64.b64encode(f.read()).decode()
+                st.markdown(
+                    f'<div style="text-align:center;"><img class="svag-avatar-img" src="data:image/png;base64,{doc_b64}"></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    "<p style='text-align:center; color:#2ecc71; font-weight:bold; margin-top:10px;'>🔊 SVAG bol raha hai...</p>",
+                    unsafe_allow_html=True,
+                )
                 if voice_audio:
-                    st.audio(voice_audio, format="audio/mp3")
+                    st.audio(voice_audio, format="audio/mp3", autoplay=True)
+
+        st.markdown("**Sawaal:** " + spoken_text)
+        st.markdown("**Jawab:** " + voice_answer)
+
         st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
 user_question = st.chat_input("Apna Ayurvedic sawaal likho...")
