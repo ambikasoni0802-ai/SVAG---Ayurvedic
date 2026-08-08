@@ -7,8 +7,47 @@ from langchain_core.documents import Document
 from groq import Groq
 
 st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="🌿")
+
+LANGUAGES = {
+    "English": "English",
+    "हिन्दी (Hindi)": "Hindi",
+    "मराठी (Marathi)": "Marathi",
+    "தமிழ் (Tamil)": "Tamil",
+    "తెలుగు (Telugu)": "Telugu",
+    "ಕನ್ನಡ (Kannada)": "Kannada",
+    "മലയാളം (Malayalam)": "Malayalam",
+    "ਪੰਜਾਬੀ (Punjabi)": "Punjabi",
+    "বাংলা (Bengali)": "Bengali",
+    "ગુજરાતી (Gujarati)": "Gujarati",
+    "ଓଡ଼ିଆ (Odia)": "Odia",
+    "اردو (Urdu)": "Urdu",
+    "नेपाली (Nepali)": "Nepali",
+    "සිංහල (Sinhala)": "Sinhala",
+    "Español (Spanish)": "Spanish",
+    "Français (French)": "French",
+    "Deutsch (German)": "German",
+    "Português (Portuguese)": "Portuguese",
+    "Italiano (Italian)": "Italian",
+    "Русский (Russian)": "Russian",
+    "中文 (Chinese)": "Chinese",
+    "日本語 (Japanese)": "Japanese",
+    "한국어 (Korean)": "Korean",
+    "العربية (Arabic)": "Arabic",
+    "Bahasa Indonesia": "Indonesian",
+    "Türkçe (Turkish)": "Turkish",
+    "Tiếng Việt (Vietnamese)": "Vietnamese",
+    "ไทย (Thai)": "Thai",
+    "Kiswahili (Swahili)": "Swahili",
+    "Nederlands (Dutch)": "Dutch",
+}
+
+with st.sidebar:
+    st.header("⚙️ Settings")
+    selected_label = st.selectbox("Jawab ki bhasha / Answer language", list(LANGUAGES.keys()), index=0)
+    selected_language = LANGUAGES[selected_label]
+
 st.title("🌿 SVAG — Ayurvedic AI Assistant")
-st.caption("Ayurveda se juda koi bhi sawaal poochein")
+st.caption("Ayurveda se juda koi bhi sawaal poochein — kisi bhi bhasha mein")
 
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
@@ -71,13 +110,15 @@ vectordb = load_svag()
 client = Groq(api_key=GROQ_API_KEY)
 
 
-def svag_ask(question):
+def svag_ask(question, language):
     results = vectordb.similarity_search(question, k=4)
     context = "\n\n".join([r.page_content for r in results])
     prompt = (
-        f"Tum SVAG ho, ek Ayurvedic AI assistant. Neeche diye gaye Ayurvedic context ke "
-        f"aadhar par sawaal ka jawab do. Agar context me jawab na mile to bolo ki tumhe pata nahi.\n\n"
-        f"Context:\n{context}\n\nSawaal: {question}\n\nJawab:"
+        f"You are SVAG, an Ayurvedic AI assistant. "
+        f"Always answer in {language} language only, regardless of what language the question is in. "
+        f"Use the Ayurvedic context below to answer the question. "
+        f"If the answer is not in the context, say you don't know (in {language}).\n\n"
+        f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer (in {language}):"
     )
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -102,6 +143,6 @@ if user_question:
 
     with st.chat_message("assistant"):
         with st.spinner("SVAG soch raha hai..."):
-            answer = svag_ask(user_question)
+            answer = svag_ask(user_question, selected_language)
             st.markdown(answer)
     st.session_state.messages.append({"role": "assistant", "content": answer})
