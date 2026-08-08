@@ -37,7 +37,9 @@ def speech_to_text(audio_bytes):
     )
     return transcription.text
 
-st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="🌿")
+st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="logo.png")
+
+SVAG_AVATAR = "logo.png"
 
 LANGUAGES = {
     "English": "English",
@@ -77,7 +79,11 @@ with st.sidebar:
     selected_label = st.selectbox("Jawab ki bhasha / Answer language", list(LANGUAGES.keys()), index=0)
     selected_language = LANGUAGES[selected_label]
 
-st.title("🌿 SVAG — Ayurvedic AI Assistant")
+col1, col2 = st.columns([1, 5])
+with col1:
+    st.image("logo.png", width=80)
+with col2:
+    st.title("SVAG — Ayurvedic AI Assistant")
 st.caption("Ayurveda se juda koi bhi sawaal poochein — kisi bhi bhasha mein")
 
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -203,7 +209,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
+    avatar = SVAG_AVATAR if msg["role"] == "assistant" else None
+    with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
 st.divider()
@@ -220,7 +227,7 @@ if uploaded_image is not None:
             st.image(uploaded_image, width=200)
             if image_note:
                 st.markdown(image_note)
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=SVAG_AVATAR):
             with st.spinner("SVAG image dekh raha hai..."):
                 image_answer = svag_ask_image(image_bytes, selected_language, image_note)
                 st.markdown(image_answer)
@@ -240,7 +247,7 @@ if voice_input is not None:
         st.session_state.messages.append({"role": "user", "content": spoken_text})
         with st.chat_message("user"):
             st.markdown(spoken_text)
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=SVAG_AVATAR):
             with st.spinner("SVAG soch raha hai..."):
                 voice_answer = svag_ask(spoken_text, selected_language)
                 st.markdown(voice_answer)
@@ -256,7 +263,7 @@ if user_question:
     with st.chat_message("user"):
         st.markdown(user_question)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=SVAG_AVATAR):
         with st.spinner("SVAG soch raha hai..."):
             answer = svag_ask(user_question, selected_language)
             st.markdown(answer)
