@@ -77,44 +77,24 @@ DOCTOR_VIDEO = "doctor_avatar.mp4"
 
 
 def show_speaking_screen(answer_text, audio_buffer):
-    import base64
     st.markdown(
         """
         <style>
-        .svag-call-screen {
-            background-color: #10151c;
-            border-radius: 20px;
-            padding: 30px 20px;
-            text-align: center;
-        }
-        .svag-call-screen video {
-            border-radius: 20px;
-            width: 260px;
-            max-width: 90%;
-        }
         .svag-speaking-text {
             color: #4CAF50;
             font-size: 18px;
-            margin-top: 15px;
+            margin-top: 10px;
             font-weight: 600;
+            text-align: center;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    with open(DOCTOR_VIDEO, "rb") as f:
-        video_b64 = base64.b64encode(f.read()).decode()
-    st.markdown(
-        f"""
-        <div class="svag-call-screen">
-            <video autoplay loop muted playsinline>
-                <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
-            </video>
-            <p class="svag-speaking-text">🔊 SVAG bol raha hai...</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    vcol1, vcol2, vcol3 = st.columns([1, 2, 1])
+    with vcol2:
+        st.video(DOCTOR_VIDEO, loop=True, autoplay=True, muted=True)
+    st.markdown('<p class="svag-speaking-text">🔊 SVAG bol raha hai...</p>', unsafe_allow_html=True)
     if audio_buffer:
         st.audio(audio_buffer, format="audio/mp3", autoplay=True)
     with st.expander("Jawab padhein"):
