@@ -1,5 +1,5 @@
 import streamlit as st
-import json, os, subprocess, io, asyncio
+import json, os, subprocess, io, asyncio, base64, math, struct, wave
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -42,12 +42,61 @@ LANG_TO_MALE_VOICE = {
 }
 
 
+def generate_chime():
+    """Generates a small pleasant two-tone notification chime as WAV bytes."""
+    sample_rate = 44100
+    notes = [(880, 0.15), (1318, 0.25)]  # A5 then E6 — a simple pleasant "ding-dong"
+    frames = []
+    for freq, duration in notes:
+        n_samples = int(sample_rate * duration)
+        for i in range(n_samples):
+            t = i / sample_rate
+            fade = min(1.0, (n_samples - i) / (sample_rate * 0.05))
+            sample = math.sin(2 * math.pi * freq * t) * 0.3 * fade
+            frames.append(struct.pack("<h", int(sample * 32767)))
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"".join(frames))
+    buffer.seek(0)
+    return buffer.read()
+
+
+def play_chime_then_speech(speech_audio_bytes):
+    """Plays a chime sound, then the speech audio right after it finishes."""
+    chime_bytes = generate_chime()
+    chime_b64 = base64.b64encode(chime_bytes).decode()
+    speech_b64 = base64.b64encode(speech_audio_bytes).decode()
+    st.markdown(
+        f"""
+        <audio id="svag_chime" autoplay>
+            <source src="data:audio/wav;base64,{chime_b64}" type="audio/wav">
+        </audio>
+        <audio id="svag_speech">
+            <source src="data:audio/mp3;base64,{speech_b64}" type="audio/mp3">
+        </audio>
+        <script>
+        const chime = document.getElementById('svag_chime');
+        const speech = document.getElementById('svag_speech');
+        if (chime) {{
+            chime.onended = function() {{
+                speech.play().catch(function(e) {{}});
+            }};
+        }}
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def text_to_speech(text, language):
     voice = LANG_TO_MALE_VOICE.get(language, "en-US-GuyNeural")
     try:
         async def _generate():
             audio_bytes = b""
-            communicate = edge_tts.Communicate(text, voice, rate="+10%", pitch="-12Hz")
+            communicate = edge_tts.Communicate(text, voice, rate="+50%", pitch="-4Hz")
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_bytes += chunk["data"]
@@ -174,6 +223,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if "selected_language_persist" not in st.session_state:
+    st.session_state.selected_language_persist = "English"
+
+LABEL_BY_LANGUAGE = {v: k for k, v in LANGUAGES.items()}
+
 top_c1, top_c2, top_c3 = st.columns([1, 3, 1])
 with top_c1:
     if st.button("☰", key="hamburger_btn"):
@@ -184,18 +238,26 @@ with top_c2:
 if st.session_state.show_settings:
     with st.container(border=True):
         st.markdown("**⚙️ Settings**")
-        selected_label = st.selectbox("Jawab ki bhasha / Answer language", list(LANGUAGES.keys()), index=0)
-        selected_language = LANGUAGES[selected_label]
-else:
-    if "selected_language_persist" not in st.session_state:
-        st.session_state.selected_language_persist = "English"
-    selected_language = st.session_state.selected_language_persist
+        current_label = LABEL_BY_LANGUAGE.get(st.session_state.selected_language_persist, "English")
+        current_index = list(LANGUAGES.keys()).index(current_label)
+        selected_label = st.selectbox(
+            "Jawab ki bhasha / Answer language",
+            list(LANGUAGES.keys()),
+            index=current_index,
+            key="language_selectbox",
+        )
+        st.session_state.selected_language_persist = LANGUAGES[selected_label]
 
-if st.session_state.show_settings:
-    st.session_state.selected_language_persist = selected_language
+selected_language = st.session_state.selected_language_persist
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "welcomed" not in st.session_state:
+    st.session_state.welcomed = True
+    welcome_audio = text_to_speech("Welcome to SVAG. How can I help you?", "English")
+    if welcome_audio:
+        play_chime_then_speech(welcome_audio.read())
 
 if len(st.session_state.messages) == 0:
     import base64
@@ -284,10 +346,20 @@ def show_appointment_button():
 
 
 def svag_ask(question, language):
-    results = vectordb.similarity_search(question, k=4)
+    results = vectordb.similarity_search(question, k=10)
     context = "\n\n".join([r.page_content for r in results])
     prompt = (
-        f"You are SVAG, an Ayurvedic AI assistant. "
+        f"You are SVAG, an Ayurvedic AI assistant with deep, complete expertise in ALL areas of "
+        f"Ayurveda — doshas (Vata, Pitta, Kapha), herbs and their properties (rasa, guna, virya, "
+        f"vipaka, prabhav), diseases and their Ayurvedic treatment, methods of preparation (vidhi) "
+        f"of Ayurvedic medicines/formulations, Panchakarma, Rasayana, diet and lifestyle (aahar-"
+        f"vihar), classical texts (Charak Samhita etc.), and every other branch of Ayurveda. "
+        f"Always give a COMPLETE, THOROUGH, and DETAILED answer — never give a short, partial, or "
+        f"incomplete answer. Cover every relevant aspect of the topic: definitions, types/"
+        f"classifications, properties, method/process (vidhi) if applicable, benefits, uses, and "
+        f"precautions where relevant. Do not leave out any important Ayurvedic detail related to "
+        f"the question. Use bullet points or numbered lists where it helps organize a detailed "
+        f"answer. "
         f"Always answer in {language} language only, regardless of what language the question is in. "
         f"If the user asks who made you, who created you, who your developer is, or any similar "
         f"question about your origin/creator, always answer that you were made by Veenu from SVAG "
@@ -304,13 +376,16 @@ def svag_ask(question, language):
         f"If the user says they want to book an appointment, mil na hai, consultation chahiye, or "
         f"anything similar, tell them (in {language}) that you are showing them an appointment "
         f"booking button/link below — mention that a button has appeared for them to tap. "
-        f"Use the Ayurvedic context below to answer the question. "
-        f"If the answer is not in the context, say you don't know (in {language}).\n\n"
-        f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer (in {language}):"
+        f"Use the Ayurvedic context below, plus your own broad Ayurvedic knowledge, to give the "
+        f"fullest possible answer. If the specific answer is not in the context, still answer from "
+        f"your general Ayurvedic knowledge rather than saying you don't know — only say you don't "
+        f"know if the topic is truly unrelated to Ayurveda.\n\n"
+        f"Context:\n{context}\n\nQuestion: {question}\n\nDetailed Answer (in {language}):"
     )
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000,
     )
     return response.choices[0].message.content
 
@@ -320,11 +395,14 @@ def svag_ask_image(image_bytes, language, user_note=""):
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
     text_instruction = (
         f"You are SVAG, an Ayurvedic AI assistant. Look at this image — it may be an Ayurvedic "
-        f"herb, plant, root, powder, or medicine. Identify it if possible, and explain in "
-        f"{language} language: its name (also give the Sanskrit/Ayurvedic name if known), its "
-        f"Ayurvedic properties (rasa, guna, virya if relevant), common uses/benefits, and any "
-        f"precautions. If you cannot confidently identify it, say so clearly in {language}. "
-        f"Answer only in {language}."
+        f"herb, plant, root, powder, or medicine. Identify it if possible, and give a COMPLETE, "
+        f"DETAILED explanation in {language} language covering: its name (also give the Sanskrit/"
+        f"Ayurvedic name if known), its full Ayurvedic properties (rasa, guna, virya, vipaka, "
+        f"prabhav), how it is traditionally prepared/processed (vidhi) if relevant, all common "
+        f"uses/benefits, which doshas it balances, dosage guidance if commonly known, and any "
+        f"precautions or contraindications. Do not give a short or partial answer — cover every "
+        f"relevant Ayurvedic detail. If you cannot confidently identify it, say so clearly in "
+        f"{language} but still describe what you can observe. Answer only in {language}."
     )
     if user_note:
         text_instruction += f" Additional note from user: {user_note}"
@@ -340,6 +418,7 @@ def svag_ask_image(image_bytes, language, user_note=""):
                 ],
             }
         ],
+        max_tokens=1500,
     )
     return response.choices[0].message.content
 
