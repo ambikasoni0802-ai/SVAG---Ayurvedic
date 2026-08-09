@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import json, os, subprocess, io, asyncio, base64, math, struct, wave
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -69,7 +70,7 @@ def play_chime_then_speech(speech_audio_bytes):
     chime_bytes = generate_chime()
     chime_b64 = base64.b64encode(chime_bytes).decode()
     speech_b64 = base64.b64encode(speech_audio_bytes).decode()
-    st.markdown(
+    components.html(
         f"""
         <audio id="svag_chime" autoplay>
             <source src="data:audio/wav;base64,{chime_b64}" type="audio/wav">
@@ -87,7 +88,7 @@ def play_chime_then_speech(speech_audio_bytes):
         }}
         </script>
         """,
-        unsafe_allow_html=True,
+        height=0,
     )
 
 
@@ -96,7 +97,7 @@ def text_to_speech(text, language):
     try:
         async def _generate():
             audio_bytes = b""
-            communicate = edge_tts.Communicate(text, voice, rate="+50%", pitch="-4Hz")
+            communicate = edge_tts.Communicate(text, voice, rate="+30%", pitch="-1Hz")
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_bytes += chunk["data"]
