@@ -422,6 +422,15 @@ def show_video_button(topic_text):
     st.link_button("🎥 Video Dekhein (YouTube)", youtube_url)
 
 
+def get_friendly_error_message(language):
+    return (
+        "SVAG abhi bahut zyada demand mein hai aur iski usage limit filhal ke liye poori ho gayi hai. "
+        "Kripya ek minute ruk kar dobara try karein — thodi der mein ye phir se kaam karega.\n\n"
+        "(SVAG is currently experiencing high demand and has reached its usage limit for the moment. "
+        "Please wait about a minute and try again — it will be back shortly.)"
+    )
+
+
 def svag_ask(question, language):
     results = vectordb.similarity_search(question, k=10)
     context = "\n\n".join([r.page_content for r in results])
@@ -477,12 +486,15 @@ def svag_ask(question, language):
         f"know if the topic is truly unrelated to Ayurveda.\n\n"
         f"Context:\n{context}\n\nQuestion: {question}\n\nDetailed Answer (in {language}):"
     )
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2000,
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return get_friendly_error_message(language)
 
 
 def svag_ask_image(image_bytes, language, user_note=""):
@@ -517,20 +529,23 @@ def svag_ask_image(image_bytes, language, user_note=""):
     if user_note:
         text_instruction += f" Additional note from user: {user_note}"
 
-    response = client.chat.completions.create(
-        model="llama-3.2-90b-vision-preview",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": text_instruction},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
-                ],
-            }
-        ],
-        max_tokens=1500,
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.2-90b-vision-preview",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": text_instruction},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+                    ],
+                }
+            ],
+            max_tokens=1500,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return get_friendly_error_message(language)
 
 
 if "messages" not in st.session_state:
