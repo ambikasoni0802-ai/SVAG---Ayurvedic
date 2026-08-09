@@ -92,12 +92,34 @@ def play_chime_then_speech(speech_audio_bytes):
     )
 
 
+def clean_text_for_speech(text):
+    """Removes markdown symbols, URLs, and formatting noise so TTS reads natural, clean speech."""
+    import re
+    cleaned = text
+
+    # Remove markdown links but keep the visible label: [label](url) -> label
+    cleaned = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", cleaned)
+    # Remove raw URLs entirely (they sound broken when read aloud)
+    cleaned = re.sub(r"https?://\S+", "", cleaned)
+    # Remove markdown bold/italic/code markers
+    cleaned = re.sub(r"[*_`#]+", "", cleaned)
+    # Remove bullet/list markers at line start (-, •, 1., 2), etc.)
+    cleaned = re.sub(r"^\s*[-•]\s*", "", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"^\s*\d+[\.\)]\s*", "", cleaned, flags=re.MULTILINE)
+    # Collapse extra whitespace/newlines into natural pauses
+    cleaned = re.sub(r"\n{2,}", ". ", cleaned)
+    cleaned = re.sub(r"\n", ". ", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
 def text_to_speech(text, language):
     voice = LANG_TO_MALE_VOICE.get(language, "en-US-GuyNeural")
+    clean_text = clean_text_for_speech(text)
     try:
         async def _generate():
             audio_bytes = b""
-            communicate = edge_tts.Communicate(text, voice, rate="+30%", pitch="-1Hz")
+            communicate = edge_tts.Communicate(clean_text, voice, rate="+30%", pitch="-1Hz")
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_bytes += chunk["data"]
@@ -376,6 +398,10 @@ def svag_ask(question, language):
         f"the question. Use bullet points or numbered lists where it helps organize a detailed "
         f"answer. "
         f"Always answer in {language} language only, regardless of what language the question is in. "
+        f"Do not mix in words or phrases from any other language mid-answer — the entire answer "
+        f"must stay consistently in {language} from start to end, including any technical or "
+        f"Ayurvedic terms (transliterate them into {language} script/pronunciation rather than "
+        f"switching scripts). "
         f"If the user asks who made you, who created you, who your developer is, or any similar "
         f"question about your origin/creator, always answer that you were made by Veenu from SVAG "
         f"group (say this in {language}) — do not mention any AI company, model provider, or "
