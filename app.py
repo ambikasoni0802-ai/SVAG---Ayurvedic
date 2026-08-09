@@ -157,6 +157,18 @@ def speech_to_text(audio_bytes):
 
 st.set_page_config(page_title="SVAG - Ayurvedic AI", page_icon="logo.png")
 
+if not st.user.is_logged_in:
+    col_a, col_b, col_c = st.columns([1, 2, 1])
+    with col_b:
+        st.image("logo.png", width=200)
+    st.markdown("<h2 style='text-align:center;'>SVAG mein aapka swagat hai</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center;'>Aage badhne ke liye apne Google account se login karein</p>", unsafe_allow_html=True)
+    lcol_a, lcol_b, lcol_c = st.columns([1, 2, 1])
+    with lcol_b:
+        if st.button("🔵 Google se Login Karein", use_container_width=True):
+            st.login("google")
+    st.stop()
+
 SVAG_AVATAR = "logo.png"
 
 
@@ -274,6 +286,7 @@ with top_c2:
 if st.session_state.show_settings:
     with st.container(border=True):
         st.markdown("**⚙️ Settings**")
+        st.markdown(f"👤 Logged in as: **{st.user.name}**")
         current_label = LABEL_BY_LANGUAGE.get(st.session_state.selected_language_persist, "English")
         current_index = list(LANGUAGES.keys()).index(current_label)
         selected_label = st.selectbox(
@@ -283,6 +296,8 @@ if st.session_state.show_settings:
             key="language_selectbox",
         )
         st.session_state.selected_language_persist = LANGUAGES[selected_label]
+        if st.button("🚪 Logout"):
+            st.logout()
 
 selected_language = st.session_state.selected_language_persist
 
