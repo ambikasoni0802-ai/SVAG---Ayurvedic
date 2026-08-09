@@ -92,6 +92,19 @@ def play_chime_then_speech(speech_audio_bytes):
     )
 
 
+def play_audio_hidden(audio_bytes):
+    """Autoplays audio invisibly — no visible player box, just plays alongside the text."""
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    components.html(
+        f"""
+        <audio autoplay>
+            <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
+        </audio>
+        """,
+        height=0,
+    )
+
+
 def clean_text_for_speech(text):
     """Removes markdown symbols, URLs, and formatting noise so TTS reads natural, clean speech."""
     import re
@@ -368,6 +381,47 @@ def show_appointment_button():
     st.link_button("📅 Appointment Book Karein", APPOINTMENT_LINK)
 
 
+DINCHARYA_TIP = (
+    "🌅 **Ayurvedic Dincharya (Daily Routine):** Brahma muhurta mein (sunrise se pehle) uthein, "
+    "khali pet paani piyein, oil pulling/daant saaf karein, yoga-pranayam-dhyan karein, snan karein, "
+    "samay par saatvik bhojan karein (dhire-dhire, bina jaldi ke), din mein halki dhoop lein, raat ka "
+    "khana halka aur jaldi (sunset ke 2-3 ghante andar) karein, aur samay par so jayein (10-11 baje "
+    "tak). Yeh santulit Dincharya teeno doshon (Vata, Pitta, Kapha) ko sadhne mein madad karti hai."
+)
+
+DOCTOR_INFO_TEXT = (
+    "👨‍⚕️ **SVAG Group Doctor:** Dr. Ajit Kadam — sabhi Ayurvedic bimariyon ka ilaj karte hain, "
+    "khaaskar Arthritis (jodo ka dard) mein unhe 29 saal ka experience hai."
+)
+
+CREATOR_INFO_TEXT = "🌿 **SVAG** — Made by Veenu, SVAG group."
+
+
+def show_info_bundle():
+    with st.container(border=True):
+        st.markdown(DINCHARYA_TIP)
+        st.markdown(DOCTOR_INFO_TEXT)
+        show_appointment_button()
+        st.markdown(CREATOR_INFO_TEXT)
+
+
+VIDEO_KEYWORDS = [
+    "video", "वीडियो", "video bhejo", "video dikhao", "vidio",
+]
+
+
+def is_video_request(text):
+    text_lower = text.lower()
+    return any(keyword.lower() in text_lower for keyword in VIDEO_KEYWORDS)
+
+
+def show_video_button(topic_text):
+    import urllib.parse
+    query = urllib.parse.quote(f"{topic_text} ayurvedic")
+    youtube_url = f"https://www.youtube.com/results?search_query={query}"
+    st.link_button("🎥 Video Dekhein (YouTube)", youtube_url)
+
+
 def svag_ask(question, language):
     results = vectordb.similarity_search(question, k=10)
     context = "\n\n".join([r.page_content for r in results])
@@ -435,14 +489,29 @@ def svag_ask_image(image_bytes, language, user_note=""):
     import base64
     b64_image = base64.b64encode(image_bytes).decode("utf-8")
     text_instruction = (
-        f"You are SVAG, an Ayurvedic AI assistant. Look at this image — it may be an Ayurvedic "
-        f"herb, plant, root, powder, or medicine. Identify it if possible, and give a COMPLETE, "
-        f"DETAILED explanation in {language} language covering: its name (also give the Sanskrit/"
-        f"Ayurvedic name if known), its full Ayurvedic properties (rasa, guna, virya, vipaka, "
-        f"prabhav), how it is traditionally prepared/processed (vidhi) if relevant, all common "
-        f"uses/benefits, which doshas it balances, dosage guidance if commonly known, and any "
-        f"precautions or contraindications. Do not give a short or partial answer — cover every "
-        f"relevant Ayurvedic detail. If you cannot confidently identify it, say so clearly in "
+        f"You are SVAG, an Ayurvedic AI assistant. Look at this image. It could be TWO kinds of "
+        f"things — figure out which one it is and respond accordingly, in {language} language:\n\n"
+        f"CASE 1 — If it is an Ayurvedic herb, plant, root, powder, or medicine: identify it if "
+        f"possible, and give a COMPLETE, DETAILED explanation covering its name (also give the "
+        f"Sanskrit/Ayurvedic name if known), its full Ayurvedic properties (rasa, guna, virya, "
+        f"vipaka, prabhav), how it is traditionally prepared/processed (vidhi) if relevant, all "
+        f"common uses/benefits, which doshas it balances, dosage guidance if commonly known, and "
+        f"any precautions or contraindications.\n\n"
+        f"CASE 2 — If it is a photo of a body part, skin condition, swelling, joint, wound, rash, "
+        f"or any visible physical ailment/symptom: describe what you can observe in the image, "
+        f"explain what Ayurvedic understanding/perspective applies to this kind of condition "
+        f"(possible dosha imbalance involved), give a COMPLETE and DETAILED general Ayurvedic "
+        f"treatment approach (relevant herbs, Panchakarma therapies, diet/lifestyle changes, home "
+        f"remedies commonly used in Ayurveda for this kind of condition). This applies to ANY "
+        f"condition, not just one specific disease — analyze whatever is shown. Be clear that this "
+        f"is general Ayurvedic guidance based on a photo, not a confirmed medical diagnosis, and "
+        f"recommend an in-person consultation for a confirmed diagnosis and personalized treatment. "
+        f"If the condition looks like it could be arthritis/joint pain, specifically mention that "
+        f"SVAG group ke Dr. Ajit Kadam ko arthritis treatment mein 29 saal ka experience hai aur "
+        f"unse consult karne ki salah dein, adhik jaankari ke liye is link ka zikr karein: "
+        f"https://swamivivekanandayurvedclinic.netlify.app/\n\n"
+        f"Do not give a short or partial answer — cover every relevant detail for whichever case "
+        f"applies. If you cannot confidently identify what's in the image, say so clearly in "
         f"{language} but still describe what you can observe. Answer only in {language}."
     )
     if user_note:
@@ -499,7 +568,7 @@ with icon_c3:
 # --- Panel: Photo/File upload ---
 if st.session_state.show_upload:
     with st.container(border=True):
-        st.markdown("**📷 Jadi-buti/medicine ki photo bhejo**")
+        st.markdown("**📷 Photo bhejo — jadi-buti/dawai PHOTO ya apni takleef/body part ki photo**")
         uploaded_image = st.file_uploader("Photo upload karo (jpg/png)", type=["jpg", "jpeg", "png"])
         image_note = st.text_input("Photo ke baare me kuch batana ho to likho (optional)")
 
@@ -518,7 +587,8 @@ if st.session_state.show_upload:
                         st.markdown(image_answer)
                         image_audio = text_to_speech(image_answer, selected_language)
                         if image_audio:
-                            st.audio(image_audio, format="audio/mp3")
+                            play_audio_hidden(image_audio.read())
+                show_info_bundle()
                 st.session_state.messages.append({"role": "assistant", "content": image_answer})
                 st.session_state.show_upload = False
 
@@ -543,9 +613,10 @@ if st.session_state.show_voice_msg:
                             st.markdown(vm_answer)
                             vm_audio = text_to_speech(vm_answer, selected_language)
                             if vm_audio:
-                                st.audio(vm_audio, format="audio/mp3")
-                            if is_appointment_request(edited_text):
-                                show_appointment_button()
+                                play_audio_hidden(vm_audio.read())
+                            if is_video_request(edited_text):
+                                show_video_button(edited_text)
+                    show_info_bundle()
                     st.session_state.messages.append({"role": "assistant", "content": vm_answer})
                     st.session_state.show_voice_msg = False
                     del st.session_state.vm_transcribed
@@ -570,9 +641,10 @@ if st.session_state.show_voice_assistant:
                         st.markdown(voice_answer)
                         voice_audio = text_to_speech(voice_answer, selected_language)
                         if voice_audio:
-                            st.audio(voice_audio, format="audio/mp3", autoplay=True)
-                        if is_appointment_request(spoken_text):
-                            show_appointment_button()
+                            play_audio_hidden(voice_audio.read())
+                        if is_video_request(spoken_text):
+                            show_video_button(spoken_text)
+                show_info_bundle()
 
                 st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
@@ -589,7 +661,8 @@ if user_question:
             st.markdown(answer)
             audio = text_to_speech(answer, selected_language)
             if audio:
-                st.audio(audio, format="audio/mp3")
-            if is_appointment_request(user_question):
-                show_appointment_button()
+                play_audio_hidden(audio.read())
+            if is_video_request(user_question):
+                show_video_button(user_question)
+    show_info_bundle()
     st.session_state.messages.append({"role": "assistant", "content": answer})
