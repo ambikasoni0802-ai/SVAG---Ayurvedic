@@ -442,40 +442,70 @@ def is_ayurvedic_herb_request(topic_text):
 
 
 def fetch_real_herb_image(herb_name):
-    """Fetches a real photo of the herb from Wikipedia (free, no API key needed) — not AI-generated."""
+    """Fetches a real photo of the herb from Wikipedia/Wikimedia Commons (free, no API key) — not AI-generated."""
     import requests
 
-    headers = {"User-Agent": "SVAG-Ayurvedic-App/1.0"}
+    headers = {"User-Agent": "SVAG-Ayurvedic-App/1.0 (contact: svag-app@example.com)"}
 
+    def try_wikipedia_pageimage(query):
+        try:
+            search_resp = requests.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={"action": "query", "list": "search", "srsearch": query, "format": "json", "srlimit": 1},
+                headers=headers, timeout=20,
+            )
+            search_results = search_resp.json().get("query", {}).get("search", [])
+            if not search_results:
+                return None
+            page_title = search_results[0]["title"]
+
+            img_resp = requests.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={
+                    "action": "query", "titles": page_title, "prop": "pageimages",
+                    "format": "json", "pithumbsize": 800,
+                },
+                headers=headers, timeout=20,
+            )
+            pages = img_resp.json().get("query", {}).get("pages", {})
+            for page in pages.values():
+                thumb = page.get("thumbnail", {})
+                if thumb.get("source"):
+                    return thumb["source"], page_title
+            return None
+        except Exception:
+            return None
+
+    def try_commons_search(query):
+        try:
+            resp = requests.get(
+                "https://commons.wikimedia.org/w/api.php",
+                params={
+                    "action": "query", "generator": "search", "gsrsearch": f"{query} filetype:bitmap",
+                    "gsrlimit": 1, "prop": "imageinfo", "iiprop": "url", "format": "json",
+                },
+                headers=headers, timeout=20,
+            )
+            pages = resp.json().get("query", {}).get("pages", {})
+            for page in pages.values():
+                imageinfo = page.get("imageinfo", [])
+                if imageinfo and imageinfo[0].get("url"):
+                    return imageinfo[0]["url"], page.get("title", query)
+            return None
+        except Exception:
+            return None
+
+    result = try_wikipedia_pageimage(f"{herb_name} plant") or try_wikipedia_pageimage(herb_name)
+    if not result:
+        result = try_commons_search(f"{herb_name} ayurvedic herb") or try_commons_search(herb_name)
+    if not result:
+        return None
+
+    image_url, source_title = result
     try:
-        # Step 1: find the best matching Wikipedia article for this herb
-        search_url = "https://en.wikipedia.org/w/api.php"
-        search_params = {
-            "action": "query",
-            "list": "search",
-            "srsearch": f"{herb_name} plant Ayurvedic herb",
-            "format": "json",
-            "srlimit": 1,
-        }
-        search_resp = requests.get(search_url, params=search_params, headers=headers, timeout=20)
-        search_results = search_resp.json().get("query", {}).get("search", [])
-        if not search_results:
-            return None
-        page_title = search_results[0]["title"]
-
-        # Step 2: get the page summary, which includes a real photo thumbnail
-        summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
-        summary_resp = requests.get(summary_url, headers=headers, timeout=20)
-        summary_data = summary_resp.json()
-        image_info = summary_data.get("originalimage") or summary_data.get("thumbnail")
-        if not image_info or "source" not in image_info:
-            return None
-        image_url = image_info["source"]
-
-        # Step 3: download the actual real image
         img_resp = requests.get(image_url, headers=headers, timeout=30)
         if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-            return img_resp.content, page_title
+            return img_resp.content, source_title
         return None
     except Exception:
         return None
