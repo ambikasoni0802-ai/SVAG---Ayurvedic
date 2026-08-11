@@ -441,63 +441,52 @@ def is_ayurvedic_herb_request(topic_text):
         return False
 
 
-def get_herb_visual_description(herb_name):
-    """Asks the LLM for an accurate physical/botanical description to ground the image generation."""
-    desc_prompt = (
-        f"Give a short, precise botanical/visual description (2-3 sentences, in English) of the "
-        f"real Ayurvedic herb/plant '{herb_name}' — describe its actual leaf shape and color, "
-        f"flower color/shape if any, stem, root appearance, and overall plant size/form, exactly "
-        f"as it looks in real life. Be factually accurate, no extra commentary, just the visual "
-        f"description."
-    )
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": desc_prompt}],
-            max_tokens=150,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception:
-        return ""
-
-
-def generate_herb_image(herb_name):
-    """Generates a photorealistic image of an Ayurvedic herb using Pollinations.ai (free, no API key needed)."""
-    import urllib.parse
+def fetch_real_herb_image(herb_name):
+    """Fetches a real photo of the herb from Wikipedia (free, no API key needed) — not AI-generated."""
     import requests
 
-    visual_desc = get_herb_visual_description(herb_name)
+    headers = {"User-Agent": "SVAG-Ayurvedic-App/1.0"}
 
-    prompt = (
-        f"A real photorealistic photograph of the actual {herb_name} Ayurvedic medicinal plant. "
-        f"{visual_desc} "
-        f"Shot as a macro nature photograph, natural outdoor lighting, DSLR camera quality, sharp "
-        f"focus, high detail, realistic botanical photography, real plant in its natural habitat. "
-        f"Not an illustration, not a drawing, not a cartoon, not a 3D render, not stylized art — "
-        f"a real photograph only."
-    )
-    encoded_prompt = urllib.parse.quote(prompt)
-    seed = abs(hash(herb_name)) % 100000
-    image_url = (
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        f"?width=768&height=768&nologo=true&seed={seed}&model=flux"
-    )
-    headers = {"User-Agent": "Mozilla/5.0 (SVAG Ayurvedic App)"}
-    for attempt in range(2):
-        try:
-            response = requests.get(image_url, headers=headers, timeout=60)
-            if response.status_code == 200 and len(response.content) > 1000:
-                return response.content
-        except Exception:
-            pass
-    return None
+    try:
+        # Step 1: find the best matching Wikipedia article for this herb
+        search_url = "https://en.wikipedia.org/w/api.php"
+        search_params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": f"{herb_name} plant Ayurvedic herb",
+            "format": "json",
+            "srlimit": 1,
+        }
+        search_resp = requests.get(search_url, params=search_params, headers=headers, timeout=20)
+        search_results = search_resp.json().get("query", {}).get("search", [])
+        if not search_results:
+            return None
+        page_title = search_results[0]["title"]
+
+        # Step 2: get the page summary, which includes a real photo thumbnail
+        summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
+        summary_resp = requests.get(summary_url, headers=headers, timeout=20)
+        summary_data = summary_resp.json()
+        image_info = summary_data.get("originalimage") or summary_data.get("thumbnail")
+        if not image_info or "source" not in image_info:
+            return None
+        image_url = image_info["source"]
+
+        # Step 3: download the actual real image
+        img_resp = requests.get(image_url, headers=headers, timeout=30)
+        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+            return img_resp.content, page_title
+        return None
+    except Exception:
+        return None
 
 
 IMAGE_REQUEST_KEYWORDS = [
     "image", "photo", "picture", "chitra", "तस्वीर", "फोटो", "इमेज", "चित्र", "pic",
 ]
 IMAGE_ACTION_KEYWORDS = [
-    "banao", "banake", "banaiye", "generate", "do", "dikhao", "chahiye", "bhejo", "बनाओ", "दो", "दिखाओ",
+    "banao", "banake", "banaiye", "generate", "do", "dikhao", "chahiye", "bhejo",
+    "laao", "lao", "dhundo", "dhundho", "batao", "बनाओ", "दो", "दिखाओ", "लाओ",
 ]
 
 
@@ -532,18 +521,19 @@ def extract_herb_name(text):
 
 
 def handle_herb_image_flow(user_text, language):
-    """Full flow: extract herb, generate image, and give growing/origin details. Returns True if handled."""
+    """Full flow: extract herb, fetch a REAL photo (not AI-generated), and give growing/origin details."""
     herb_name = extract_herb_name(user_text)
     if not herb_name:
-        st.warning("Ye sirf Ayurvedic jadi-buti ki image bana sakta hai. Kripya kisi Ayurvedic herb ka naam batayein (jaise Ashwagandha, Tulsi, Manjistha).")
+        st.warning("Ye sirf Ayurvedic jadi-buti ki real photo la sakta hai. Kripya kisi Ayurvedic herb ka naam batayein (jaise Ashwagandha, Tulsi, Manjistha).")
         return True
-    with st.spinner(f"'{herb_name}' ki image banai ja rahi hai..."):
-        img_bytes = generate_herb_image(herb_name)
-    if not img_bytes:
-        st.error("Image banane mein dikkat aayi, dobara try karein.")
+    with st.spinner(f"'{herb_name}' ki real photo dhoondi ja rahi hai..."):
+        result = fetch_real_herb_image(herb_name)
+    if not result:
+        st.error("Is jadi-buti ki real photo abhi nahi mil payi, dobara try karein ya naam sahi se likhein.")
         return True
+    img_bytes, source_title = result
     with st.chat_message("assistant", avatar=SVAG_AVATAR):
-        st.image(img_bytes, caption=herb_name, width=400)
+        st.image(img_bytes, caption=f"{herb_name} (source: Wikipedia — {source_title})", width=400)
         with st.spinner("Jaankari taiyar ki ja rahi hai..."):
             growth_question = (
                 f"{herb_name} kahan paya jata hai, kaise ugta hai (mitti, jalvayu, region), "
@@ -555,7 +545,7 @@ def handle_herb_image_flow(user_text, language):
         if growth_audio:
             play_audio_hidden(growth_audio.read())
     show_info_bundle()
-    st.session_state.messages.append({"role": "assistant", "content": f"[{herb_name} ki image] {growth_info}"})
+    st.session_state.messages.append({"role": "assistant", "content": f"[{herb_name} ki real photo] {growth_info}"})
     return True
 
 
@@ -722,37 +712,38 @@ with icon_c3:
         st.session_state.show_voice_msg = False
         st.session_state.show_image_gen = False
 with icon_c4:
-    if st.button("🖼️", key="imagegen_btn", help="Jadi-buti ki image banao"):
+    if st.button("🖼️", key="imagegen_btn", help="Jadi-buti ki real photo laao"):
         st.session_state.show_image_gen = not st.session_state.show_image_gen
         st.session_state.show_upload = False
         st.session_state.show_voice_msg = False
         st.session_state.show_voice_assistant = False
 
-# --- Panel: Ayurvedic herb image generation ---
+# --- Panel: Ayurvedic herb real photo ---
 if st.session_state.show_image_gen:
     with st.container(border=True):
-        st.markdown("**🖼️ Ayurvedic jadi-buti ki image banao**")
-        st.caption("Sirf Ayurvedic jadi-buti/plant ki image banti hai — kuch aur nahi.")
-        herb_topic = st.text_input("Kis jadi-buti ki image chahiye? (jaise: Ashwagandha, Tulsi)", key="herb_topic_input")
-        if st.button("Image Banao", key="generate_herb_image_btn"):
+        st.markdown("**🖼️ Ayurvedic jadi-buti ki real photo laao**")
+        st.caption("Sirf Ayurvedic jadi-buti/plant ki real photo aati hai (Wikipedia se) — AI-generated nahi.")
+        herb_topic = st.text_input("Kis jadi-buti ki photo chahiye? (jaise: Ashwagandha, Tulsi)", key="herb_topic_input")
+        if st.button("Photo Laao", key="fetch_herb_image_btn"):
             if herb_topic.strip():
                 with st.spinner("Check kar rahe hain..."):
                     valid_herb = is_ayurvedic_herb_request(herb_topic)
                 if not valid_herb:
-                    st.warning("Ye sirf Ayurvedic jadi-buti/plant ki image bana sakta hai. Kripya kisi Ayurvedic herb ka naam likhein (jaise Ashwagandha, Tulsi, Neem).")
+                    st.warning("Ye sirf Ayurvedic jadi-buti/plant ki photo la sakta hai. Kripya kisi Ayurvedic herb ka naam likhein (jaise Ashwagandha, Tulsi, Neem).")
                 else:
-                    with st.spinner(f"'{herb_topic}' ki image banai ja rahi hai..."):
-                        img_bytes = generate_herb_image(herb_topic)
-                    if img_bytes:
-                        st.session_state.messages.append({"role": "user", "content": f"[Image banao: {herb_topic}]"})
+                    with st.spinner(f"'{herb_topic}' ki real photo dhoondi ja rahi hai..."):
+                        result = fetch_real_herb_image(herb_topic)
+                    if result:
+                        img_bytes, source_title = result
+                        st.session_state.messages.append({"role": "user", "content": f"[Photo laao: {herb_topic}]"})
                         with st.chat_message("user"):
-                            st.markdown(f"Image banao: {herb_topic}")
+                            st.markdown(f"Photo laao: {herb_topic}")
                         with st.chat_message("assistant", avatar=SVAG_AVATAR):
-                            st.image(img_bytes, caption=herb_topic, width=400)
-                        st.session_state.messages.append({"role": "assistant", "content": f"[{herb_topic} ki image]"})
+                            st.image(img_bytes, caption=f"{herb_topic} (source: Wikipedia — {source_title})", width=400)
+                        st.session_state.messages.append({"role": "assistant", "content": f"[{herb_topic} ki real photo]"})
                         st.session_state.show_image_gen = False
                     else:
-                        st.error("Image banane mein dikkat aayi, dobara try karein.")
+                        st.error("Is jadi-buti ki real photo abhi nahi mil payi, dobara try karein ya naam sahi se likhein.")
 
 # --- Panel: Photo/File upload ---
 if st.session_state.show_upload:
