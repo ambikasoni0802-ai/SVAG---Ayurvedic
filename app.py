@@ -444,18 +444,23 @@ def is_ayurvedic_herb_request(topic_text):
 def generate_herb_image(herb_name):
     """Generates an image of an Ayurvedic herb using Pollinations.ai (free, no API key needed)."""
     import urllib.parse
-    import urllib.request
+    import requests
     prompt = (
         f"{herb_name} ayurvedic medicinal herb plant, detailed botanical illustration, "
         f"natural, leaves and roots visible, educational diagram, high quality"
     )
     encoded_prompt = urllib.parse.quote(prompt)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&nologo=true"
-    try:
-        with urllib.request.urlopen(image_url, timeout=30) as response:
-            return response.read()
-    except Exception:
-        return None
+    seed = abs(hash(herb_name)) % 100000
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&nologo=true&seed={seed}"
+    headers = {"User-Agent": "Mozilla/5.0 (SVAG Ayurvedic App)"}
+    for attempt in range(2):
+        try:
+            response = requests.get(image_url, headers=headers, timeout=60)
+            if response.status_code == 200 and len(response.content) > 1000:
+                return response.content
+        except Exception:
+            pass
+    return None
 
 
 IMAGE_REQUEST_KEYWORDS = [
