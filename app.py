@@ -422,6 +422,108 @@ def show_video_button(topic_text):
     st.link_button("🎥 Video Dekhein (YouTube)", youtube_url)
 
 
+def is_ayurvedic_herb_request(topic_text):
+    """Uses the LLM to strictly check if the requested topic is a genuine Ayurvedic herb/plant."""
+    check_prompt = (
+        f"Is the following text the name of a genuine Ayurvedic medicinal herb, plant, root, or "
+        f"botanical substance used in Ayurveda (e.g. Ashwagandha, Tulsi, Neem, Brahmi, Turmeric, "
+        f"Triphala, etc.)? Answer with ONLY one word: YES or NO. Text: \"{topic_text}\""
+    )
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": check_prompt}],
+            max_tokens=5,
+        )
+        answer = response.choices[0].message.content.strip().upper()
+        return answer.startswith("YES")
+    except Exception:
+        return False
+
+
+def generate_herb_image(herb_name):
+    """Generates an image of an Ayurvedic herb using Pollinations.ai (free, no API key needed)."""
+    import urllib.parse
+    import urllib.request
+    prompt = (
+        f"{herb_name} ayurvedic medicinal herb plant, detailed botanical illustration, "
+        f"natural, leaves and roots visible, educational diagram, high quality"
+    )
+    encoded_prompt = urllib.parse.quote(prompt)
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=768&nologo=true"
+    try:
+        with urllib.request.urlopen(image_url, timeout=30) as response:
+            return response.read()
+    except Exception:
+        return None
+
+
+IMAGE_REQUEST_KEYWORDS = [
+    "image", "photo", "picture", "chitra", "तस्वीर", "फोटो", "इमेज", "चित्र", "pic",
+]
+IMAGE_ACTION_KEYWORDS = [
+    "banao", "banake", "banaiye", "generate", "do", "dikhao", "chahiye", "bhejo", "बनाओ", "दो", "दिखाओ",
+]
+
+
+def is_image_generation_request(text):
+    text_lower = text.lower()
+    has_image_word = any(k.lower() in text_lower for k in IMAGE_REQUEST_KEYWORDS)
+    has_action_word = any(k.lower() in text_lower for k in IMAGE_ACTION_KEYWORDS)
+    return has_image_word and has_action_word
+
+
+def extract_herb_name(text):
+    """Uses the LLM to extract a genuine Ayurvedic herb name from a request, or return NONE."""
+    extract_prompt = (
+        f"The user wrote this message asking for an image: \"{text}\". "
+        f"If this message mentions the name of a genuine Ayurvedic medicinal herb, plant, or root "
+        f"(e.g. Ashwagandha, Manjistha, Tulsi, Neem, Brahmi, Triphala, etc.), reply with ONLY that "
+        f"herb's name (in English/Roman letters). If no genuine Ayurvedic herb is mentioned, reply "
+        f"with ONLY the word NONE."
+    )
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": extract_prompt}],
+            max_tokens=15,
+        )
+        result = response.choices[0].message.content.strip()
+        if result.upper() == "NONE" or len(result) > 40:
+            return None
+        return result
+    except Exception:
+        return None
+
+
+def handle_herb_image_flow(user_text, language):
+    """Full flow: extract herb, generate image, and give growing/origin details. Returns True if handled."""
+    herb_name = extract_herb_name(user_text)
+    if not herb_name:
+        st.warning("Ye sirf Ayurvedic jadi-buti ki image bana sakta hai. Kripya kisi Ayurvedic herb ka naam batayein (jaise Ashwagandha, Tulsi, Manjistha).")
+        return True
+    with st.spinner(f"'{herb_name}' ki image banai ja rahi hai..."):
+        img_bytes = generate_herb_image(herb_name)
+    if not img_bytes:
+        st.error("Image banane mein dikkat aayi, dobara try karein.")
+        return True
+    with st.chat_message("assistant", avatar=SVAG_AVATAR):
+        st.image(img_bytes, caption=herb_name, width=400)
+        with st.spinner("Jaankari taiyar ki ja rahi hai..."):
+            growth_question = (
+                f"{herb_name} kahan paya jata hai, kaise ugta hai (mitti, jalvayu, region), "
+                f"aur iski kheti kaise hoti hai — poori detail dein."
+            )
+            growth_info = svag_ask(growth_question, language)
+        st.markdown(growth_info)
+        growth_audio = text_to_speech(growth_info, language)
+        if growth_audio:
+            play_audio_hidden(growth_audio.read())
+    show_info_bundle()
+    st.session_state.messages.append({"role": "assistant", "content": f"[{herb_name} ki image] {growth_info}"})
+    return True
+
+
 def get_friendly_error_message(language):
     return (
         "SVAG abhi bahut zyada demand mein hai aur iski usage limit filhal ke liye poori ho gayi hai. "
@@ -562,23 +664,60 @@ if "show_voice_msg" not in st.session_state:
     st.session_state.show_voice_msg = False
 if "show_voice_assistant" not in st.session_state:
     st.session_state.show_voice_assistant = False
+if "show_image_gen" not in st.session_state:
+    st.session_state.show_image_gen = False
 
-icon_c1, icon_c2, icon_c3, icon_c4 = st.columns([1, 1, 1, 3])
+icon_c1, icon_c2, icon_c3, icon_c4, icon_c5 = st.columns([1, 1, 1, 1, 2])
 with icon_c1:
     if st.button("➕", key="plus_btn", help="Photo/File bhejo"):
         st.session_state.show_upload = not st.session_state.show_upload
         st.session_state.show_voice_msg = False
         st.session_state.show_voice_assistant = False
+        st.session_state.show_image_gen = False
 with icon_c2:
     if st.button("🎤", key="mic_btn", help="Voice message (bol ke likho)"):
         st.session_state.show_voice_msg = not st.session_state.show_voice_msg
         st.session_state.show_upload = False
         st.session_state.show_voice_assistant = False
+        st.session_state.show_image_gen = False
 with icon_c3:
     if st.button("🔵", key="voice_assistant_btn", help="Voice assistant (bol ke seedha jawab)"):
         st.session_state.show_voice_assistant = not st.session_state.show_voice_assistant
         st.session_state.show_upload = False
         st.session_state.show_voice_msg = False
+        st.session_state.show_image_gen = False
+with icon_c4:
+    if st.button("🖼️", key="imagegen_btn", help="Jadi-buti ki image banao"):
+        st.session_state.show_image_gen = not st.session_state.show_image_gen
+        st.session_state.show_upload = False
+        st.session_state.show_voice_msg = False
+        st.session_state.show_voice_assistant = False
+
+# --- Panel: Ayurvedic herb image generation ---
+if st.session_state.show_image_gen:
+    with st.container(border=True):
+        st.markdown("**🖼️ Ayurvedic jadi-buti ki image banao**")
+        st.caption("Sirf Ayurvedic jadi-buti/plant ki image banti hai — kuch aur nahi.")
+        herb_topic = st.text_input("Kis jadi-buti ki image chahiye? (jaise: Ashwagandha, Tulsi)", key="herb_topic_input")
+        if st.button("Image Banao", key="generate_herb_image_btn"):
+            if herb_topic.strip():
+                with st.spinner("Check kar rahe hain..."):
+                    valid_herb = is_ayurvedic_herb_request(herb_topic)
+                if not valid_herb:
+                    st.warning("Ye sirf Ayurvedic jadi-buti/plant ki image bana sakta hai. Kripya kisi Ayurvedic herb ka naam likhein (jaise Ashwagandha, Tulsi, Neem).")
+                else:
+                    with st.spinner(f"'{herb_topic}' ki image banai ja rahi hai..."):
+                        img_bytes = generate_herb_image(herb_topic)
+                    if img_bytes:
+                        st.session_state.messages.append({"role": "user", "content": f"[Image banao: {herb_topic}]"})
+                        with st.chat_message("user"):
+                            st.markdown(f"Image banao: {herb_topic}")
+                        with st.chat_message("assistant", avatar=SVAG_AVATAR):
+                            st.image(img_bytes, caption=herb_topic, width=400)
+                        st.session_state.messages.append({"role": "assistant", "content": f"[{herb_topic} ki image]"})
+                        st.session_state.show_image_gen = False
+                    else:
+                        st.error("Image banane mein dikkat aayi, dobara try karein.")
 
 # --- Panel: Photo/File upload ---
 if st.session_state.show_upload:
@@ -622,17 +761,21 @@ if st.session_state.show_voice_msg:
                     st.session_state.messages.append({"role": "user", "content": edited_text})
                     with st.chat_message("user"):
                         st.markdown(edited_text)
-                    with st.chat_message("assistant", avatar=SVAG_AVATAR):
-                        with st.spinner("SVAG soch raha hai..."):
-                            vm_answer = svag_ask(edited_text, selected_language)
-                            st.markdown(vm_answer)
-                            vm_audio = text_to_speech(vm_answer, selected_language)
-                            if vm_audio:
-                                play_audio_hidden(vm_audio.read())
-                            if is_video_request(edited_text):
-                                show_video_button(edited_text)
-                    show_info_bundle()
-                    st.session_state.messages.append({"role": "assistant", "content": vm_answer})
+
+                    if is_image_generation_request(edited_text):
+                        handle_herb_image_flow(edited_text, selected_language)
+                    else:
+                        with st.chat_message("assistant", avatar=SVAG_AVATAR):
+                            with st.spinner("SVAG soch raha hai..."):
+                                vm_answer = svag_ask(edited_text, selected_language)
+                                st.markdown(vm_answer)
+                                vm_audio = text_to_speech(vm_answer, selected_language)
+                                if vm_audio:
+                                    play_audio_hidden(vm_audio.read())
+                                if is_video_request(edited_text):
+                                    show_video_button(edited_text)
+                        show_info_bundle()
+                        st.session_state.messages.append({"role": "assistant", "content": vm_answer})
                     st.session_state.show_voice_msg = False
                     del st.session_state.vm_transcribed
 
@@ -650,18 +793,21 @@ if st.session_state.show_voice_assistant:
                 with st.chat_message("user"):
                     st.markdown(spoken_text)
 
-                with st.chat_message("assistant", avatar=SVAG_AVATAR):
-                    with st.spinner("SVAG soch raha hai..."):
-                        voice_answer = svag_ask(spoken_text, selected_language)
-                        st.markdown(voice_answer)
-                        voice_audio = text_to_speech(voice_answer, selected_language)
-                        if voice_audio:
-                            play_audio_hidden(voice_audio.read())
-                        if is_video_request(spoken_text):
-                            show_video_button(spoken_text)
-                show_info_bundle()
+                if is_image_generation_request(spoken_text):
+                    handle_herb_image_flow(spoken_text, selected_language)
+                else:
+                    with st.chat_message("assistant", avatar=SVAG_AVATAR):
+                        with st.spinner("SVAG soch raha hai..."):
+                            voice_answer = svag_ask(spoken_text, selected_language)
+                            st.markdown(voice_answer)
+                            voice_audio = text_to_speech(voice_answer, selected_language)
+                            if voice_audio:
+                                play_audio_hidden(voice_audio.read())
+                            if is_video_request(spoken_text):
+                                show_video_button(spoken_text)
+                    show_info_bundle()
 
-                st.session_state.messages.append({"role": "assistant", "content": voice_answer})
+                    st.session_state.messages.append({"role": "assistant", "content": voice_answer})
 
 user_question = st.chat_input("Apna Ayurvedic sawaal likho...")
 
@@ -670,14 +816,17 @@ if user_question:
     with st.chat_message("user"):
         st.markdown(user_question)
 
-    with st.chat_message("assistant", avatar=SVAG_AVATAR):
-        with st.spinner("SVAG soch raha hai..."):
-            answer = svag_ask(user_question, selected_language)
-            st.markdown(answer)
-            audio = text_to_speech(answer, selected_language)
-            if audio:
-                play_audio_hidden(audio.read())
-            if is_video_request(user_question):
-                show_video_button(user_question)
-    show_info_bundle()
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+    if is_image_generation_request(user_question):
+        handle_herb_image_flow(user_question, selected_language)
+    else:
+        with st.chat_message("assistant", avatar=SVAG_AVATAR):
+            with st.spinner("SVAG soch raha hai..."):
+                answer = svag_ask(user_question, selected_language)
+                st.markdown(answer)
+                audio = text_to_speech(answer, selected_language)
+                if audio:
+                    play_audio_hidden(audio.read())
+                if is_video_request(user_question):
+                    show_video_button(user_question)
+        show_info_bundle()
+        st.session_state.messages.append({"role": "assistant", "content": answer})
